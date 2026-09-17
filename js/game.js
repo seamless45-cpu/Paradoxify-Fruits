@@ -1,0 +1,294 @@
+// ---------- Game: renderer, camera + shake, input, waves, main loop ----------
+import * as THREE from 'three';
+import { clamp, lerp } from './utils.js';
+import { Scheduler } from './utils.js';
+import { GraphicsSettings } from './graphics.js';
+import { AudioSys } from './audio.js';
+import { World } from './world.js';
+import { Effects } from './effects.js';
+import { EnemyManager } from './enemies.js';
+import { Player } from './player.js';
+import { SkillSystem } from './skills.js';
+import { UI } from './ui.js';
+
+export class Game {
+  constructor() {
+    this.settings = new GraphicsSettings();
+    this.audio = new AudioSys(this.settings);
+    this.scheduler = new Scheduler();
+    this.input = { up: false, down: false, left: false, right: false, sprint: false, joyX: 0, joyZ: 0, firing: false };
+    this.isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    this.time = 0;
+    this.wave = 1;
+    this.waveT = 0;
+    this.timeScale = 1;
+    this.hitstopT = 0;
+    this.hitstopDur = 0;
+    // camera shake: POSITION ONLY (x,y,z). Rotation is never touched by shake.
+    this.trauma = 0;
+    this.sustain = { mag: 0, t: 0, dur: 1 };
+    this.shakeOffset = new THREE.Vector3();
+    this.camYaw = 0;
+    this.camDist = 30;
+    this.aimPoint = new THREE.Vector3(0, 0, 10);
+    this.mouseNDC = new THREE.Vector2(0, 0);
+    this.hasMouse = false;
+    this.fpsEMA = 60;
+  }
+
+  async init(onProgress) {
+    const step = async (pct, msg) => { onProgress(pct, msg); await new Promise(r => setTimeout(r, 10)); };
+    await step(8, 'creating renderer…');
+    const canvas = document.getElementById('game-canvas');
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.settings.get('antialias'), powerPreference: 'high-performance' });
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1500);
+    this.applySize();
+
+    await step(25, 'building arena…');
+    this.world = new World(this);
+    this.world.build();
+
+    await step(45, 'forging effects…');
+    this.effects = new Effects(this);
+    this.effects.init();
+
+    await step(60, 'summoning player…');
+    this.player = new Player(this);
+    this.player.build();
+    this.enemies = new EnemyManager(this);
+    this.skills = new SkillSystem(this);
+    this.skills.build();
+
+    await step(78, 'painting interface…');
+    this.ui = new UI(this);
+    this.ui.init();
+    if (this.isTouch) document.body.classList.add('touch');
+
+    // aim marker ring
+    this.aimMarker = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1.25, 40),
+      new THREE.MeshBasicMaterial({ color: 0xa64dff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
+    );
+    this.aimMarker.geometry.rotateX(-Math.PI / 2);
+    this.scene.add(this.aimMarker);
+
+    this.settings.onChange((k) => this.applySettings(k));
+    this.applySettings('*');
+    this.bindInput();
+    this.ui.el.mute.textContent = this.settings.get('mute') ? '🔇' : '🔊';
+
+    await step(92, 'opening portals…');
+    // starter pack: a few enemies + welcome
+    for (let i = 0; i < 4; i++) {
+      const p = this.world.randomEdgePoint(new THREE.Vector3());
+      this.enemies.spawn('normal', p);
+    }
+    this.ui.announce('⚔️ WAVE 1 — FIGHT!', '#ffd94d');
+    await step(100, 'ready!');
+  }
+
+  // ================= SETTINGS =================
+  applySize() {
+    const s = this.settings;
+    const pr = Math.min(window.devicePixelRatio || 1, s.get('maxPixelRatio')) * s.get('resolutionScale');
+    this.renderer.setPixelRatio(pr);
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+  }
+  applySettings(k) {
+    if (k === '*' || k === 'resolutionScale' || k === 'maxPixelRatio') this.applySize();
+    if (k === '*' || k === 'shadows' || k === 'shadowSize' || k === 'fogDensity') this.world.applySettings();
+    if (k === 'boltDetail') this.effects.rebuildBoltVariants();
+    if (k === '*' || k === 'fpsCounter') this.ui.el.fps.classList.toggle('hidden', !this.settings.get('fpsCounter'));
+    if (k === '*' || k === 'volume' || k === 'mute') this.audio.applyVolume();
+    if (!this.settings.get('shakeEnabled')) { this.trauma = 0; }
+  }
+
+  // ================= SHAKE (position-only) =================
+  shakeFrom(pos, power, maxDist = 40) {
+    if (!this.settings.get('shakeEnabled') || power <= 0) return;
+    const d = this.camera.position.distanceTo(pos);
+    const fall = clamp(1 - d / maxDist, 0, 1); // closer = stronger, farther = weaker
+    if (fall <= 0) return;
+    this.trauma = clamp(this.trauma + power * fall * (0.35 + 0.65 * fall), 0, 1);
+  }
+  sustainShake(mag, dur) {
+    if (!this.settings.get('shakeEnabled')) return;
+    this.sustain.mag = clamp(mag, 0, 1); this.sustain.t = dur; this.sustain.dur = dur;
+  }
+  updateShake(dt) {
+    if (this.sustain.t > 0) {
+      this.sustain.t -= dt;
+      this.trauma = Math.max(this.trauma, this.sustain.mag * clamp(this.sustain.t / this.sustain.dur + 0.25, 0, 1));
+    }
+    this.trauma = Math.max(0, this.trauma - dt * 1.5);
+    const I = this.settings.get('shakeEnabled') ? this.settings.get('shakeIntensity') : 0;
+    const amp = this.trauma * this.trauma * 3.2 * I;
+    // high-frequency random positional offsets on X, Y, Z only — NEVER rotation
+    this.shakeOffset.set(
+      (Math.random() * 2 - 1) * amp,
+      (Math.random() * 2 - 1) * amp * 0.7,
+      (Math.random() * 2 - 1) * amp
+    );
+  }
+
+  hitstop(dur) {
+    this.hitstopT = dur; this.hitstopDur = dur;
+    this.timeScale = 0;
+  }
+
+  // ================= INPUT =================
+  bindInput() {
+    const inp = this.input;
+    const keyMap = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
+    window.addEventListener('keydown', (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+      this.audio.unlock();
+      if (keyMap[e.code]) { inp[keyMap[e.code]] = true; e.preventDefault(); }
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') inp.sprint = true;
+      if (e.code === 'KeyQ') this.qHeld = true;
+      if (e.code === 'KeyE') this.eHeld = true;
+      if (e.repeat) return;
+      if (e.code === 'Escape') {
+        for (const id of ['picker-modal', 'settings-modal', 'help-modal']) document.getElementById(id).classList.add('hidden');
+        return;
+      }
+      const modalOpen = ['picker-modal', 'settings-modal', 'help-modal'].some(id => !document.getElementById(id).classList.contains('hidden'));
+      if (modalOpen) return; // ignore game keys while a modal is open
+      const FI = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyB: 4, KeyF: 5 };
+      const SI = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4 };
+      if (e.code in FI) this.skills.castFruit(FI[e.code]);
+      else if (e.code in SI) this.skills.castSword(SI[e.code]);
+      else if (e.code === 'KeyM') { const m = this.audio.toggleMute(); this.ui.el.mute.textContent = m ? '🔇' : '🔊'; this.ui.refreshSettingsCtl(); }
+      else if (e.code === 'KeyH') this.ui.el.help.classList.toggle('hidden');
+    });
+    window.addEventListener('keyup', (e) => {
+      if (keyMap[e.code]) inp[keyMap[e.code]] = false;
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') inp.sprint = false;
+      if (e.code === 'KeyQ') this.qHeld = false;
+      if (e.code === 'KeyE') this.eHeld = false;
+      const FI = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyB: 4, KeyF: 5 };
+      if (e.code in FI) this.skills.releaseFruit(FI[e.code]);
+    });
+    const canvas = this.renderer.domElement;
+    canvas.addEventListener('pointermove', (e) => {
+      this.mouseNDC.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+      this.hasMouse = true;
+      if (this.rmb) this.camYaw -= e.movementX * 0.005;
+    });
+    canvas.addEventListener('pointerdown', (e) => {
+      this.audio.unlock();
+      if (e.button === 0) inp.firing = true;
+      if (e.button === 2) this.rmb = true;
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (e.button === 0) inp.firing = false;
+      if (e.button === 2) this.rmb = false;
+    });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('wheel', (e) => {
+      this.camDist = clamp(this.camDist + Math.sign(e.deltaY) * 2.5, 16, 52);
+    }, { passive: true });
+    window.addEventListener('resize', () => this.applySize());
+  }
+
+  updateAim() {
+    if (this.isTouch) {
+      const e = this.enemies.nearest(this.player.pos, 48);
+      if (e) this.aimPoint.copy(e.pos);
+      else this.aimPoint.copy(this.player.pos).add(_aim.set(Math.sin(this.player.yaw) * 10, 0, Math.cos(this.player.yaw) * 10));
+    } else if (this.hasMouse) {
+      _ray.setFromCamera(this.mouseNDC, this.camera);
+      const t = -_ray.ray.origin.y / _ray.ray.direction.y;
+      if (t > 0 && t < 500) {
+        this.aimPoint.copy(_ray.ray.origin).addScaledVector(_ray.ray.direction, t);
+        this.world.clampToArena(this.aimPoint, -40);
+      }
+    }
+    this.aimMarker.position.set(this.aimPoint.x, 0.12, this.aimPoint.z);
+    const f = this.player.fruit();
+    this.aimMarker.material.color.setHex(f ? f.color : 0x888899);
+    const s = 1 + Math.sin(this.time * 6) * 0.08;
+    this.aimMarker.scale.set(s, 1, s);
+  }
+
+  // ================= LOOP =================
+  start() {
+    this.clock = new THREE.Clock();
+    this.renderer.setAnimationLoop(() => this.frame());
+  }
+  frame() {
+    const rawDt = Math.min(this.clock.getDelta(), 0.05);
+    // fps
+    if (rawDt > 0) this.fpsEMA = lerp(this.fpsEMA, 1 / rawDt, 0.05);
+    if (this.settings.get('fpsCounter')) this.ui.el.fps.textContent = Math.round(this.fpsEMA) + ' FPS';
+    // hitstop (real-time countdown, world frozen)
+    if (this.hitstopT > 0) {
+      this.hitstopT -= rawDt;
+      const k = 1 - this.hitstopT / this.hitstopDur;
+      this.ui.setRedshift(k < 0.7 ? k : 1 - (k - 0.7) / 0.3 * 0.3);
+      if (this.hitstopT <= 0) { this.timeScale = 1; this.ui.setRedshift(0); }
+    }
+    const dt = rawDt * this.timeScale;
+    this.time += dt;
+
+    // waves (30s cadence)
+    if (!this.player.dead) {
+      this.waveT += dt;
+      if (this.waveT >= 30) {
+        this.waveT = 0; this.wave++;
+        this.ui.announce('⚔️ WAVE ' + this.wave, '#ffd94d');
+        this.audio.roar();
+      }
+    }
+    // camera rotate keys
+    if (this.qHeld) this.camYaw += rawDt * 1.8;
+    if (this.eHeld) this.camYaw -= rawDt * 1.8;
+
+    // firing (hold)
+    if (this.input.firing) this.player.tryM1();
+
+    // simulate
+    this.scheduler.update(dt);
+    this.player.update(dt, this.input);
+    this.enemies.update(dt);
+    this.skills.update(dt);
+    this.effects.update(dt);
+    this.world.update(dt, this.time);
+    this.updateAim();
+    this.updateShake(dt);
+
+    // camera: follow + POSITION-ONLY shake (rotation computed pre-shake, never shaken)
+    const P = this.player.pos;
+    const d = this.camDist, h = d * 0.82;
+    _bp.set(
+      P.x + Math.sin(this.camYaw) * d * 0.62,
+      h,
+      P.z + Math.cos(this.camYaw) * d * 0.62
+    );
+    _lt.set(
+      lerp(P.x, this.aimPoint.x, 0.14),
+      1.6,
+      lerp(P.z, this.aimPoint.z, 0.14)
+    );
+    this.camera.position.lerp(_bp, 1 - Math.pow(0.0001, rawDt));
+    this.camera.lookAt(_lt);                    // rotation set from UNSHAKEN position
+    this.camera.position.add(this.shakeOffset); // positional displacement only
+    this.camera.updateMatrixWorld();
+
+    // ui
+    this.ui.updateSkillRows();
+    this.ui.updateHUD();
+    this.ui.updateDmg(rawDt);
+    this.ui.pulseLowHp(this.player.dead ? 0 : this.player.hp / this.player.maxHp);
+
+    this.renderer.render(this.scene, this.camera);
+  }
+}
+const _ray = new THREE.Raycaster();
+const _bp = new THREE.Vector3(), _lt = new THREE.Vector3(), _aim = new THREE.Vector3();
