@@ -38,6 +38,9 @@ export class Game {
     this.menuT = 0;
     this.best = this.loadBest();
     this.autoResT = 0;
+    this.combo = { n: 0, t: 0 };
+    this.baseFov = this.settings.get('fov');
+    this.fovKick = 0;
   }
 
   async init(onProgress) {
@@ -103,6 +106,7 @@ export class Game {
     if (k === '*' || k === 'resolutionScale' || k === 'maxPixelRatio') this.applySize();
     if (k === '*' || k === 'shadows' || k === 'shadowSize' || k === 'fogDensity') this.world.applySettings();
     if (k === 'boltDetail') this.effects.rebuildBoltVariants();
+    if (k === '*' || k === 'fov') this.baseFov = this.settings.get('fov');
     if (k === '*' || k === 'fpsCounter') this.ui.el.fps.classList.toggle('hidden', !this.settings.get('fpsCounter'));
     if (k === '*' || k === 'volume' || k === 'mute') this.audio.applyVolume();
     if (!this.settings.get('shakeEnabled')) { this.trauma = 0; }
@@ -112,17 +116,18 @@ export class Game {
   // ================= RUN STATE / MENU / PAUSE =================
   loadBest() {
     try {
-      if (typeof localStorage === 'undefined') return { wave: 0, kills: 0, time: 0 };
+      if (typeof localStorage === 'undefined') return { wave: 0, kills: 0, time: 0, combo: 0 };
       const raw = localStorage.getItem('paradoxify_best_v1');
-      if (raw) return Object.assign({ wave: 0, kills: 0, time: 0 }, JSON.parse(raw));
+      if (raw) return Object.assign({ wave: 0, kills: 0, time: 0, combo: 0 }, JSON.parse(raw));
     } catch (e) {}
-    return { wave: 0, kills: 0, time: 0 };
+    return { wave: 0, kills: 0, time: 0, combo: 0 };
   }
   recordBest() {
     let changed = false;
     if (this.wave > this.best.wave) { this.best.wave = this.wave; changed = true; }
     if (this.enemies.kills > this.best.kills) { this.best.kills = this.enemies.kills; changed = true; }
     if (this.time > this.best.time) { this.best.time = Math.floor(this.time); changed = true; }
+    if ((this.best.combo || 0) >= 5) changed = true;
     if (changed) { try { if (typeof localStorage !== 'undefined') localStorage.setItem('paradoxify_best_v1', JSON.stringify(this.best)); } catch (e) {} }
   }
   startRun() {
@@ -169,6 +174,14 @@ export class Game {
     this.ui.showMenu();
   }
   restartRun() { this.startRun(); }
+  addKick(x) { this.fovKick = Math.min(24, this.fovKick + x); }
+  onEnemyKilled(e) {
+    this.combo.n++; this.combo.t = 3.5;
+    if (this.combo.n > (this.best.combo || 0)) this.best.combo = this.combo.n;
+    const n = this.combo.n;
+    const label = n === 5 ? '🔥 RAMPAGE x5' : n === 10 ? '🔥🔥 FRENZY x10' : n === 20 ? '⚡ UNSTOPPABLE x20' : n === 35 ? '💀 ANNIHILATION x35' : n === 50 ? '🌌 GODLIKE x50' : n === 100 ? '♾️ PARADOX x100' : null;
+    if (label) { this.ui.announce(label, '#ffd94d'); this.audio.roar(); }
+  }
   updateBoss() {
     let boss = null;
     for (const e of this.enemies.list) {
@@ -192,12 +205,14 @@ export class Game {
     const fall = clamp(1 - d / maxDist, 0, 1); // closer = stronger, farther = weaker
     if (fall <= 0) return;
     this.trauma = clamp(this.trauma + power * fall * (0.35 + 0.65 * fall), 0, 1);
+    if (fall > 0.35) this.fovKick = Math.min(24, this.fovKick + power * fall * 7);
   }
   sustainShake(mag, dur) {
     if (!this.settings.get('shakeEnabled')) return;
     this.sustain.mag = clamp(mag, 0, 1); this.sustain.t = dur; this.sustain.dur = dur;
   }
   updateShake(dt) {
+    this.fovKick = Math.max(0, this.fovKick - dt * 26);
     if (this.sustain.t > 0) {
       this.sustain.t -= dt;
       this.trauma = Math.max(this.trauma, this.sustain.mag * clamp(this.sustain.t / this.sustain.dur + 0.25, 0, 1));
@@ -241,6 +256,7 @@ export class Game {
       if (e.code === 'KeyH') { this.ui.el.help.classList.toggle('hidden'); return; }
       if (e.code === 'KeyP') { this.togglePause(); return; }
       if (this.state === 'menu' && (e.code === 'Enter' || e.code === 'Space')) { this.startRun(); return; }
+      if (e.code === 'Space') { if (this.state === 'playing') this.player.tryDodge(); e.preventDefault(); return; }
       if (anyModal || this.state !== 'playing') return; // ignore game keys while modal open / not playing
       const FI = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyB: 4, KeyF: 5 };
       const SI = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4 };
@@ -326,12 +342,18 @@ export class Game {
         this.waveT = 0; this.wave++;
         this.recordBest();
         this.ui.announce('⚔️ WAVE ' + this.wave, '#ffd94d');
-        this.audio.roar();
+        this.audio.roar(); this.audio.horn();
       }
     }
     // camera rotate keys
     if (this.qHeld) this.camYaw += rawDt * 1.8;
     if (this.eHeld) this.camYaw -= rawDt * 1.8;
+
+    // combo decay
+    if (playing && this.combo.n > 0) {
+      this.combo.t -= dt;
+      if (this.combo.t <= 0) { if (this.combo.n >= 5) this.recordBest(); this.combo.n = 0; }
+    }
 
     // firing (hold)
     if (playing && this.input.firing) this.player.tryM1();
@@ -354,6 +376,7 @@ export class Game {
       _bp.set(Math.sin(this.camYaw) * 46, 27, Math.cos(this.camYaw) * 46);
       this.camera.position.lerp(_bp, 1 - Math.pow(0.01, rawDt));
       this.camera.lookAt(0, 2, 0);
+      if (Math.abs(this.camera.fov - this.baseFov) > 0.05) { this.camera.fov = this.baseFov; this.camera.updateProjectionMatrix(); }
       this.camera.updateMatrixWorld();
     } else {
       // camera: follow + POSITION-ONLY shake (rotation computed pre-shake, never shaken)
@@ -372,6 +395,8 @@ export class Game {
       this.camera.position.lerp(_bp, 1 - Math.pow(0.0001, rawDt));
       this.camera.lookAt(_lt);                    // rotation set from UNSHAKEN position
       this.camera.position.add(this.shakeOffset); // positional displacement only
+      const wantFov = this.baseFov + this.fovKick;
+      if (Math.abs(this.camera.fov - wantFov) > 0.05) { this.camera.fov = wantFov; this.camera.updateProjectionMatrix(); }
       this.camera.updateMatrixWorld();
     }
 
@@ -381,7 +406,7 @@ export class Game {
       this.ui.updateHUD();
       this.ui.updateDmg(rawDt);
       this.ui.pulseLowHp(this.player.dead ? 0 : this.player.hp / this.player.maxHp);
-      if (playing) { this.updateBoss(); this.autoResTick(rawDt); }
+      if (playing) { this.updateBoss(); this.autoResTick(rawDt); this.ui.updateCombo(this.combo.n, this.combo.t / 3.5); }
     }
 
     this.renderer.render(this.scene, this.camera);

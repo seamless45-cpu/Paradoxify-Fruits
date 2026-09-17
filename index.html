@@ -72,6 +72,7 @@
     <div id="hp-wrap">
       <div id="hp-bar"><div id="hp-fill"></div><span id="hp-text"></span></div>
       <div id="buff-row"></div>
+      <canvas id="minimap" width="148" height="148"></canvas>
       <div id="blade-charge-wrap" class="hidden"><div id="blade-charge-label">⚡ BLADE CHARGE</div><div id="blade-charge-bar"><div id="blade-charge-fill"></div></div></div>
     </div>
   </div>
@@ -79,6 +80,7 @@
     <div id="wave-banner">WAVE 1</div>
     <div id="stat-row"><span id="stat-kills">⚔ 0</span><span id="stat-enemies">👾 0</span><span id="stat-time">⏱ 0:00</span></div>
     <div id="boss-bar" class="hidden"><div id="boss-name">👑 BOSS</div><div id="boss-track"><div id="boss-fill"></div></div></div>
+    <div id="combo" class="hidden"><span id="combo-text">🔥 x2 COMBO</span></div>
   </div>
   <div id="hud-topright">
     <div id="fps-counter" class="hidden">60 FPS</div>
@@ -165,6 +167,7 @@
 <div id="touch-ui">
   <div id="joystick"><div id="joy-knob"></div></div>
   <button id="btn-fire">⚔️</button>
+  <button id="btn-dodge">💨</button>
 </div>
 
 <!-- DAMAGE VIGNETTE for low HP -->

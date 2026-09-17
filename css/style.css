@@ -195,3 +195,10 @@ body.in-menu #hud,body.in-menu #skill-panel,body.in-menu #inventory,body.in-menu
 #boss-fill{height:100%;width:100%;background:linear-gradient(90deg,#ff2e4d,#ff8a5c);box-shadow:0 0 10px var(--red)}
 .pause-stats{text-align:center;color:var(--dim);margin-bottom:8px;font-size:15px}
 canvas#game-canvas{cursor:crosshair}
+
+/* combo + minimap + dodge */
+#combo{margin-top:4px;text-align:center}
+#combo-text{font-family:var(--font-h);font-weight:900;font-size:17px;letter-spacing:2px;color:#ff9d2e;text-shadow:0 0 12px #ff6a00,0 0 30px rgba(255,106,0,.6)}
+#minimap{margin-top:6px;border-radius:50%;border:1px solid var(--line);box-shadow:0 0 14px rgba(0,0,0,.6)}
+#btn-dodge{position:fixed;right:322px;bottom:106px;width:58px;height:58px;border-radius:50%;z-index:25;font-size:24px;background:rgba(20,40,60,.55);border:2px solid var(--neon2);touch-action:none}
+@media (max-width:720px){#minimap{width:104px;height:104px}#btn-dodge{right:308px;bottom:100px}}

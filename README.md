@@ -30,6 +30,7 @@ Internet is needed once for the Three.js CDN + fonts.
 | `Q` / `E` or Right-drag | Rotate camera, wheel = zoom |
 | `M` `H` | Mute • Help |
 | `P` / `Esc` | Pause • Close panels |
+| `Space` / 💨 | Dodge roll (i-frames) |
 
 ### Mobile / tablet
 Left stick to move (auto-aim), ⚔️ button for M1 (hold to repeat), **USE** buttons on the skill bar to cast.
@@ -50,6 +51,9 @@ Left stick to move (auto-aim), ⚔️ button for M1 (hold to repeat), **USE** bu
   seconds remaining; `USE` buttons on touch, `Z X C V B F` badges on PC.
 - **Fruit and sword are SEPARATED** — two square horizontal inventory slots at the bottom with an
   equip/unequip picker; either slot can be empty.
+- **7 enemy kinds + real camera** — Grunts, Runners, Brutes, Spitters, Bombers, Wraiths and
+  Splitters across normal/elite/boss tiers, camera-relative movement, dodge roll with i-frames,
+  FOV kick, combo system, spawn portals, minimap and wave horns.
 - **Menu, pause, boss bar & auto-resolution** — animated main menu with best-run records, pause
   menu (`P`/`Esc`) with restart, live boss HP bar, optional auto-resolution holding ~55 FPS.
 - **All 6 fruits & 4 swords** — Gravity, Lightning, Quake, Alarm, Rimefracture (ice gun),

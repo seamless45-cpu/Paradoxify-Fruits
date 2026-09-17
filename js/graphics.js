@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS = {
   screenFlash: true,
   fpsCounter: false,
   autoRes: false,
+  fov: 55,
+  minimap: true,
   mute: false,
   volume: 0.55,
 };

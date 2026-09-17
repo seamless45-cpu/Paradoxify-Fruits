@@ -387,6 +387,9 @@ export class Effects {
         m.children[0].add(glow(0x33ccff, 9)); break;
       case 'bullet': m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), this.mat(0xffffff)); break;
       case 'laserbit': m = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 6), this.mat(0xff2e4d)); break;
+      case 'foebolt': m = new THREE.Group();
+        m.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.55, 1), this.mat(0xff44ff)));
+        m.children[0].add(glow(0xff44ff, 5)); break;
       default: m = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 6), this.mat(0xffffff));
     }
     this.projKindMesh[kind] = m;
@@ -416,6 +419,7 @@ export class Effects {
       onHit: opts.onHit || null, onGround: opts.onGround || null, onTick: opts.onTick || null,
       target: opts.target || null, homing: opts.homing || 0,
       spin: opts.spin ?? 3, pierce: opts.pierce || false,
+      foe: opts.foe || false, foeDmg: opts.foeDmg || 0,
       stun: opts.stun || 0, knock: opts.knock || 0, burn: opts.burn || 0, freeze: opts.freeze || 0,
       active: true, data: opts.data || {},
     });
@@ -444,8 +448,23 @@ export class Effects {
           this.burst(p.mesh.position, { count: p.trail.count || 2, color: p.trail.color || p.color, speed: 2, up: 2, life: 0.4, size: 1.8, gravity: 0, drag: 2 });
         }
         if (p.onTick) p.onTick(p, dt);
+        // hostile (enemy) projectile vs player
+        if (p.foe) {
+          const PP = this.game.player;
+          if (!PP.dead && p.hitEnemy) {
+            const dx = p.mesh.position.x - PP.pos.x, dz = p.mesh.position.z - PP.pos.z;
+            const dy = p.mesh.position.y - 1.2;
+            const rr = p.hitR + 0.9;
+            if (dx * dx + dz * dz < rr * rr && Math.abs(dy) < 2.8) {
+              PP.takeDamage(p.foeDmg || 20, p.mesh.position);
+              this.burst(PP.pos.clone().setY(1.4), { count: 8, color: p.color || 0xff44ff, speed: 8, life: 0.4, size: 1.8 });
+              if (p.onHit) p.onHit(p, null);
+              dead = true;
+            }
+          }
+        }
         // enemy collision
-        if (p.hitEnemy) {
+        else if (p.hitEnemy) {
           const e = EM.touching(p.mesh.position, p.hitR);
           if (e) {
             if (p.onHit) p.onHit(p, e); else {
@@ -458,7 +477,9 @@ export class Effects {
         // ground collision
         if (!dead && p.hitGround && p.mesh.position.y <= p.groundY && p.vel.y < 0) {
           p.mesh.position.y = p.groundY;
-          if (p.onGround) p.onGround(p); else {
+          if (p.onGround) p.onGround(p);
+          else if (p.foe) { this.burst(p.mesh.position, { count: 6, color: p.color || 0xff44ff, speed: 5, life: 0.35, size: 1.5 }); }
+          else {
             this.explode(p.mesh.position, { radius: p.radius, flat: p.flat, pct: p.pct, color: p.color, stun: p.stun });
           }
           dead = true;

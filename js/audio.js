@@ -87,6 +87,11 @@ export class AudioSys {
   dash() { this._noise(0.18, { freq: 1200, type: 'bandpass', q: 1.5, gain: 0.25, slideTo: 4500 }); }
   stomp() { this._tone(70, 0.5, { gain: 0.6, slideTo: 24 }); this._noise(0.4, { freq: 700, gain: 0.5, slideTo: 80 }); }
   roar() { this._tone(140, 0.5, { type: 'sawtooth', gain: 0.3, slideTo: 70 }); this._noise(0.5, { freq: 600, gain: 0.3, slideTo: 150 }); }
+  horn() {
+    this._tone(98, 0.55, { type: 'sawtooth', gain: 0.22 });
+    this._tone(147, 0.55, { type: 'sawtooth', gain: 0.18, delay: 0.03 });
+    this._tone(196, 0.4, { type: 'square', gain: 0.08, delay: 0.05 });
+  }
   heal() { this._tone(520, 0.2, { gain: 0.12, slideTo: 1040 }); }
   die() { this._tone(300, 0.5, { type: 'sawtooth', gain: 0.2, slideTo: 50 }); }
 }

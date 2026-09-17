@@ -49,6 +49,7 @@ export class UI {
       menu: $('menu'), menuBest: $('menu-best'),
       pauseModal: $('pause-modal'), pauseStats: $('pause-stats'),
       bossBar: $('boss-bar'), bossFill: $('boss-fill'), bossName: $('boss-name'),
+      combo: $('combo'), comboText: $('combo-text'), minimap: $('minimap'),
     };
   }
 
@@ -277,12 +278,14 @@ export class UI {
     toggle('Glow sprites', 'Additive impact halos.', 'glowSprites');
     slider('Enemy cap', 'Max simultaneous enemies.', 'enemyCap', 20, 100, 5, v => v.toFixed(0));
     sec('CAMERA SHAKE (POSITION ONLY — NO ROTATION)');
+    slider('Field of view', 'Camera FOV. Kicks wider on dashes & blasts.', 'fov', 40, 75, 1, v => v.toFixed(0) + '°');
     toggle('Camera shake', 'Master switch for all shake.', 'shakeEnabled');
     slider('Shake intensity', 'Multiplier on displacement.', 'shakeIntensity', 0, 2, 0.05, v => v.toFixed(2) + '×');
     sec('DISPLAY & AUDIO');
     toggle('Damage numbers', 'Floating combat text.', 'damageNumbers');
     toggle('Screen flash', 'Bright flashes on big skills.', 'screenFlash');
     toggle('FPS counter', 'Show framerate.', 'fpsCounter');
+    toggle('Minimap', 'Tactical arena overview.', 'minimap');
     toggle('Mute', 'Silence all SFX.', 'mute');
     slider('Volume', 'Master SFX volume.', 'volume', 0, 1, 0.05, v => Math.round(v * 100) + '%');
   }
@@ -301,6 +304,7 @@ export class UI {
     <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Sword skills (press Pole #2 again to stop channeling)</td></tr>
     <tr><td><kbd>M</kbd> <kbd>H</kbd></td><td>Mute • Help</td></tr>
     <tr><td><kbd>P</kbd> / <kbd>Esc</kbd></td><td>Pause / resume (Esc also closes panels)</td></tr>
+    <tr><td><kbd>Space</kbd> / 💨</td><td>Dodge roll — i-frames, 1.1s cooldown</td></tr>
     </table>
     <h4>📱 MOBILE / TABLET</h4>
     <table><tr><td>Left stick</td><td>Move (auto-aims nearest enemy)</td></tr>
@@ -312,6 +316,16 @@ export class UI {
     <table>${FRUIT_ORDER.map(id => { const f = FRUITS[id]; return `<tr><td>${f.icon} <b style="color:${f.css}">${f.name}</b></td><td>${f.desc}</td></tr>`; }).join('')}</table>
     <h4>🗡️ SWORDS</h4>
     <table>${SWORD_ORDER.map(id => { const s = SWORDS[id]; return `<tr><td>${s.icon} <b style="color:${s.css}">${s.name}</b></td><td>${s.desc}</td></tr>`; }).join('')}</table>
+    <h4>👾 ENEMIES (7 KINDS × 3 TIERS)</h4>
+    <table>
+    <tr><td>🟣 Grunt</td><td>Chases and clubs you. Fodder.</td></tr>
+    <tr><td>🟢 Runner</td><td>Fast, lunges from range.</td></tr>
+    <tr><td>🟠 Brute</td><td>Slow tank with a telegraphed AoE slam.</td></tr>
+    <tr><td>🟪 Spitter</td><td>Keeps distance, fires magenta bolts (elites/bosses shoot spreads).</td></tr>
+    <tr><td>🔴 Bomber</td><td>Rushes you and detonates — kill it early for a safe chain boom.</td></tr>
+    <tr><td>🔵 Wraith</td><td>Flies above projectiles; dive-bombs. Use blasts &amp; slashes.</td></tr>
+    <tr><td>🟢 Splitter</td><td>Splits into 2–4 Runners on death.</td></tr>
+    </table>
     <h4>💡 TIPS</h4>
     <p>• Purple Gravity fruit: Asteroid leaves 10s firepits — herd enemies through them.<br>• Gravity Blade charge grows as you fight — a full bar can erase whole packs.<br>• Pole's Juicio Continuo drains HP — it auto-stops below 50%.<br>• Quake Fatal Destruction needs a victim in front of you or nothing happens.<br>• Gun fruits (🧊🔥) fire with <kbd>LMB</kbd> — manual, ultra-precise, watch for procs.<br>• Camera shake is <b>position-only</b> — your aim never rotates. Tune it in ⚙️.</p>`;
   }
@@ -370,6 +384,7 @@ export class UI {
     };
     joy.addEventListener('pointerup', joyEnd); joy.addEventListener('pointercancel', joyEnd);
     this.el.fire.addEventListener('pointerdown', (e) => { e.preventDefault(); this.game.audio.unlock(); this.game.input.firing = true; });
+    $('btn-dodge').addEventListener('pointerdown', (e) => { e.preventDefault(); this.game.audio.unlock(); this.game.player.tryDodge(); });
     window.addEventListener('pointerup', () => { this.game.input.firing = false; });
   }
   togglePanel(show) {
@@ -382,7 +397,7 @@ export class UI {
   showMenu() {
     const b = this.game.best;
     this.el.menuBest.textContent = (b.wave > 0 || b.kills > 0)
-      ? `🏆 BEST — wave ${b.wave} • ${b.kills} kills • ${fmtTime(b.time)}`
+      ? `🏆 BEST — wave ${b.wave} • ${b.kills} kills • ${fmtTime(b.time)} • x${b.combo || 0} combo`
       : 'no legends yet. be the first.';
     this.el.menu.classList.remove('hidden');
     document.body.classList.add('in-menu');
@@ -397,6 +412,43 @@ export class UI {
     this.el.bossBar.classList.remove('hidden');
     this.el.bossFill.style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%';
     this.el.bossName.textContent = `👑 BOSS — ${fmt(boss.hp)} / ${fmt(boss.maxHp)}`;
+  }
+
+  hurtFlash() { this.flash('#ff2038', 0.26, 140); }
+  updateCombo(n, frac) {
+    if (n >= 2) {
+      this.el.combo.classList.remove('hidden');
+      this.el.comboText.textContent = `🔥 x${n} COMBO`;
+      this.el.combo.style.opacity = 0.45 + 0.55 * clamp(frac, 0, 1);
+    } else this.el.combo.classList.add('hidden');
+  }
+  updateMinimap() {
+    const cv = this.el.minimap;
+    const show = this.game.settings.get('minimap');
+    cv.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    if (!this._mm) this._mm = cv.getContext('2d');
+    const ctx = this._mm, W = cv.width, H = cv.height, R = this.game.world.arenaRadius;
+    const px = x => (x / R * 0.5 + 0.5) * W, py = z => (z / R * 0.5 + 0.5) * H;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(8,6,20,.72)';
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, W / 2 - 2, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(180,92,255,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, W / 2 - 2, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#a64dff'; ctx.fillRect(W / 2 - 1, H / 2 - 1, 2, 2);
+    for (const e of this.game.enemies.list) {
+      if (e.dead) continue;
+      ctx.fillStyle = e.tier === 'boss' ? '#ff2e4d' : e.tier === 'elite' ? '#ffaa22' : '#c9a7ff';
+      const s = e.tier === 'boss' ? 5 : e.tier === 'elite' ? 4 : 2.5;
+      ctx.fillRect(px(e.pos.x) - s / 2, py(e.pos.z) - s / 2, s, s);
+    }
+    const P = this.game.player;
+    ctx.save();
+    ctx.translate(px(P.pos.x), py(P.pos.z));
+    ctx.rotate(Math.atan2(Math.cos(P.yaw), Math.sin(P.yaw)));
+    ctx.fillStyle = '#49ffa6';
+    ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, -4.5); ctx.lineTo(-4, 4.5); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 
   // ================= DAMAGE NUMBERS =================
@@ -491,6 +543,7 @@ export class UI {
     this.el.kills.textContent = '⚔ ' + this.game.enemies.kills;
     this.el.enemies.textContent = '👾 ' + this.game.enemies.aliveCount;
     this.el.time.textContent = '⏱ ' + fmtTime(this.game.time);
+    this.updateMinimap();
     // buff timers tick display (cheap: every frame text update)
     const chips = this.el.buffRow.children;
     for (let i = 0; i < chips.length && i < P.buffs.length; i++) {

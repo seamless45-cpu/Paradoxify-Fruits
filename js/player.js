@@ -27,6 +27,7 @@ export class Player {
     this.thorns = 0;
     // dash
     this.dashing = 0; this.dashDir = new THREE.Vector3();
+    this.rollT = 0; this.rollCd = 0; this.rollDir = new THREE.Vector3(0, 0, 1); this.dustT = 0;
     this.knockV = new THREE.Vector3();
   }
 
@@ -145,6 +146,9 @@ export class Player {
     this.hp -= amount;
     this.game.ui.damageNum(this.pos, amount, 'hurt');
     this.game.ui.pulseLowHp(this.hp / this.maxHp);
+    this.game.ui.hurtFlash();
+    this.game.addKick(4);
+    this.game.shakeFrom(fromPos || this.pos, 0.3, 26);
     // alarm buffer thorns
     if (this.thorns > 0 && fromPos) {
       this.game.enemies.damageInRadius(fromPos, 6, 0, this.thorns, { color: 0xff5a5a, source: 'thorns', from: this.pos });
@@ -308,6 +312,22 @@ export class Player {
     this.game.effects.burst(hitPos, { count: 6, color: 0xffffff, speed: 7, life: 0.3, size: 1.5 });
   }
 
+  tryDodge() {
+    if (this.dead || this.rollCd > 0 || this.rollT > 0 || this.dashing > 0) return;
+    const inp = this.game.input;
+    const mx = (inp.right ? 1 : 0) - (inp.left ? 1 : 0) + inp.joyX;
+    const mz = (inp.down ? 1 : 0) - (inp.up ? 1 : 0) + inp.joyZ;
+    const yaw = this.game.camYaw;
+    const Fx = -Math.sin(yaw), Fz = -Math.cos(yaw);
+    this.rollDir.set(-Fz * mx + Fx * (-mz), 0, Fx * mx + Fz * (-mz));
+    if (this.rollDir.lengthSq() < 0.04) this.rollDir.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    this.rollDir.normalize();
+    this.rollT = 0.38; this.rollCd = 1.1;
+    this.invuln = Math.max(this.invuln, 0.42);
+    this.game.audio.dash();
+    this.game.addKick(4);
+  }
+
   dashTo(dir, dist, speed, dmgFlat, dmgPct, color) {
     this.dashDir.copy(dir).setY(0).normalize();
     this.dashing = dist / speed;
@@ -315,11 +335,13 @@ export class Player {
     this.dashDmg = { flat: dmgFlat, pct: dmgPct, color, hit: new Set() };
     this.invuln = Math.max(this.invuln, this.dashing + 0.05);
     this.game.audio.dash();
+    this.game.addKick(5);
   }
 
   update(dt, input) {
     // timers
     this.m1Cd -= dt; this.endlag -= dt; this.invuln -= dt; this.swingT -= dt;
+    this.rollT -= dt; this.rollCd -= dt;
     this.m1ComboT -= dt;
     if (this.m1ComboT <= 0) this.m1Combo = 0;
     // buffs
@@ -355,15 +377,31 @@ export class Player {
         }
       }
       this.yaw = Math.atan2(this.dashDir.x, this.dashDir.z);
+    } else if (this.rollT > 0) {
+      // dodge roll: fast i-frame tumble toward roll dir
+      this.pos.addScaledVector(this.rollDir, 17 * dt);
+      this.walkPh += dt * 16;
+      this.yaw = Math.atan2(this.rollDir.x, this.rollDir.z);
+      this.dustT -= dt;
+      if (this.dustT <= 0) { this.dustT = 0.04; this.game.effects.burst(this.pos.clone().setY(0.4), { count: 2, color: [0x9a93c7, 0x5a547a], speed: 3, up: 2, life: 0.4, size: 1.6 }); }
     } else if (this.endlag <= 0) {
       const mx = (input.right ? 1 : 0) - (input.left ? 1 : 0) + input.joyX;
       const mz = (input.down ? 1 : 0) - (input.up ? 1 : 0) + input.joyZ;
-      const len = Math.hypot(mx, mz);
+      // camera-relative movement (stays correct when the camera is rotated)
+      const yaw = this.game.camYaw;
+      const Fx = -Math.sin(yaw), Fz = -Math.cos(yaw);
+      const Rx = -Fz, Rz = Fx;
+      const ix = Rx * mx + Fx * (-mz), iz = Rz * mx + Fz * (-mz);
+      const len = Math.hypot(ix, iz);
       if (len > 0.01) {
         const cl = Math.min(1, len);
-        this.pos.x += (mx / (len || 1)) * this.speed * sprint * cl * dt;
-        this.pos.z += (mz / (len || 1)) * this.speed * sprint * cl * dt;
+        this.pos.x += (ix / len) * this.speed * sprint * cl * dt;
+        this.pos.z += (iz / len) * this.speed * sprint * cl * dt;
         this.walkPh += dt * 11 * cl;
+        if (sprint && len > 0.5) {
+          this.dustT -= dt;
+          if (this.dustT <= 0) { this.dustT = 0.07; this.game.effects.burst(this.pos.clone().setY(0.25), { count: 1, color: 0x6a6490, speed: 2, up: 1.5, life: 0.35, size: 1.4 }); }
+        }
       }
     }
     // knockback decay
