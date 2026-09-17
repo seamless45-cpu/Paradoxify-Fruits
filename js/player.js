@@ -158,6 +158,7 @@ export class Player {
   }
   die() {
     this.dead = true;
+    this.game.recordBest();
     this.game.audio.die();
     this.game.effects.burst(this.pos, { count: 60, color: [0xff3b5c, 0xffffff], speed: 14, life: 1.2, size: 2.6 });
     this.game.ui.showDeath();

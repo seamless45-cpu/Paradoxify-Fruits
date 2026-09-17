@@ -46,6 +46,9 @@ export class UI {
       flash: $('flash'), redshift: $('redshift'), lowhp: $('lowhp'),
       joy: $('joystick'), knob: $('joy-knob'), fire: $('btn-fire'),
       mute: $('btn-mute'),
+      menu: $('menu'), menuBest: $('menu-best'),
+      pauseModal: $('pause-modal'), pauseStats: $('pause-stats'),
+      bossBar: $('boss-bar'), bossFill: $('boss-fill'), bossName: $('boss-name'),
     };
   }
 
@@ -261,6 +264,7 @@ export class UI {
     b.appendChild(pr);
     sec('RENDERING');
     slider('Resolution scale', 'Render resolution multiplier.', 'resolutionScale', 0.5, 1.5, 0.05, v => v.toFixed(2) + '×');
+    toggle('Auto resolution', 'Dynamically scales render resolution to hold ~55 FPS.', 'autoRes');
     toggle('Antialiasing (MSAA)', 'Needs reload — toggles now.', 'antialias', () => setTimeout(() => location.reload(), 350));
     select('Pixel ratio cap', 'Max device pixel ratio.', 'maxPixelRatio', [[1, '1×'], [1.5, '1.5×'], [2, '2×']]);
     toggle('Shadows', 'Dynamic sun shadows.', 'shadows');
@@ -295,7 +299,8 @@ export class UI {
     <tr><td><kbd>LMB</kbd></td><td>M1 — sword slash / manual gun / punch</td></tr>
     <tr><td><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd><kbd>V</kbd><kbd>B</kbd><kbd>F</kbd></td><td>Fruit skills 1-6 (hold <kbd>V</kbd> on Lightning #4 to charge, release to fire)</td></tr>
     <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>Sword skills (press Pole #2 again to stop channeling)</td></tr>
-    <tr><td><kbd>M</kbd> <kbd>H</kbd> <kbd>Esc</kbd></td><td>Mute • Help • Close panels</td></tr>
+    <tr><td><kbd>M</kbd> <kbd>H</kbd></td><td>Mute • Help</td></tr>
+    <tr><td><kbd>P</kbd> / <kbd>Esc</kbd></td><td>Pause / resume (Esc also closes panels)</td></tr>
     </table>
     <h4>📱 MOBILE / TABLET</h4>
     <table><tr><td>Left stick</td><td>Move (auto-aims nearest enemy)</td></tr>
@@ -338,6 +343,12 @@ export class UI {
       this.openPicker(this.pickerType);
     });
     $('btn-respawn').addEventListener('click', () => this.game.player.respawn());
+    $('btn-play').addEventListener('click', () => { this.game.audio.unlock(); this.game.audio.ui(); this.game.startRun(); });
+    $('btn-menu-settings').addEventListener('click', () => { this.refreshSettingsCtl(); this.el.settings.classList.remove('hidden'); });
+    $('btn-resume').addEventListener('click', () => this.game.resumeGame());
+    $('btn-pause-settings').addEventListener('click', () => { this.refreshSettingsCtl(); this.el.settings.classList.remove('hidden'); });
+    $('btn-restart').addEventListener('click', () => this.game.restartRun());
+    $('btn-quit-menu').addEventListener('click', () => this.game.toMenu());
     // touch joystick
     const joy = this.el.joy, knob = this.el.knob;
     let joyId = null;
@@ -366,6 +377,26 @@ export class UI {
     const willShow = show !== undefined ? show : p.classList.contains('hidden');
     p.classList.toggle('hidden', !willShow);
     this.el.fab.classList.toggle('hidden', willShow);
+  }
+
+  showMenu() {
+    const b = this.game.best;
+    this.el.menuBest.textContent = (b.wave > 0 || b.kills > 0)
+      ? `🏆 BEST — wave ${b.wave} • ${b.kills} kills • ${fmtTime(b.time)}`
+      : 'no legends yet. be the first.';
+    this.el.menu.classList.remove('hidden');
+    document.body.classList.add('in-menu');
+  }
+  hideMenu() { this.el.menu.classList.add('hidden'); document.body.classList.remove('in-menu'); }
+  showPause() {
+    this.el.pauseStats.textContent = `Wave ${this.game.wave} • ${this.game.enemies.kills} kills • ${fmtTime(this.game.time)}`;
+    this.el.pauseModal.classList.remove('hidden');
+  }
+  updateBoss(boss) {
+    if (!boss) { this.el.bossBar.classList.add('hidden'); return; }
+    this.el.bossBar.classList.remove('hidden');
+    this.el.bossFill.style.width = (boss.hp / boss.maxHp * 100).toFixed(1) + '%';
+    this.el.bossName.textContent = `👑 BOSS — ${fmt(boss.hp)} / ${fmt(boss.maxHp)}`;
   }
 
   // ================= DAMAGE NUMBERS =================
@@ -436,7 +467,7 @@ export class UI {
   updateChannel(frac) { this.el.channelFill.style.width = (frac * 100).toFixed(0) + '%'; }
   hideChannel() { this.el.channelHud.classList.add('hidden'); }
   showDeath() {
-    this.el.deathStats.textContent = `Wave ${this.game.wave} • ${this.game.enemies.kills} kills • survived ${fmtTime(this.game.time)}`;
+    this.el.deathStats.textContent = `Wave ${this.game.wave} • ${this.game.enemies.kills} kills • survived ${fmtTime(this.game.time)}  •  🏆 best wave ${this.game.best.wave}`;
     this.el.death.classList.remove('hidden');
   }
   hideDeath() { this.el.death.classList.add('hidden'); }

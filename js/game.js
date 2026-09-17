@@ -34,6 +34,10 @@ export class Game {
     this.mouseNDC = new THREE.Vector2(0, 0);
     this.hasMouse = false;
     this.fpsEMA = 60;
+    this.state = 'menu';
+    this.menuT = 0;
+    this.best = this.loadBest();
+    this.autoResT = 0;
   }
 
   async init(onProgress) {
@@ -82,12 +86,7 @@ export class Game {
     this.ui.el.mute.textContent = this.settings.get('mute') ? '🔇' : '🔊';
 
     await step(92, 'opening portals…');
-    // starter pack: a few enemies + welcome
-    for (let i = 0; i < 4; i++) {
-      const p = this.world.randomEdgePoint(new THREE.Vector3());
-      this.enemies.spawn('normal', p);
-    }
-    this.ui.announce('⚔️ WAVE 1 — FIGHT!', '#ffd94d');
+    this.ui.showMenu();
     await step(100, 'ready!');
   }
 
@@ -110,6 +109,83 @@ export class Game {
   }
 
   // ================= SHAKE (position-only) =================
+  // ================= RUN STATE / MENU / PAUSE =================
+  loadBest() {
+    try {
+      if (typeof localStorage === 'undefined') return { wave: 0, kills: 0, time: 0 };
+      const raw = localStorage.getItem('paradoxify_best_v1');
+      if (raw) return Object.assign({ wave: 0, kills: 0, time: 0 }, JSON.parse(raw));
+    } catch (e) {}
+    return { wave: 0, kills: 0, time: 0 };
+  }
+  recordBest() {
+    let changed = false;
+    if (this.wave > this.best.wave) { this.best.wave = this.wave; changed = true; }
+    if (this.enemies.kills > this.best.kills) { this.best.kills = this.enemies.kills; changed = true; }
+    if (this.time > this.best.time) { this.best.time = Math.floor(this.time); changed = true; }
+    if (changed) { try { if (typeof localStorage !== 'undefined') localStorage.setItem('paradoxify_best_v1', JSON.stringify(this.best)); } catch (e) {} }
+  }
+  startRun() {
+    this.audio.unlock();
+    this.enemies.clearAll();
+    this.scheduler.clear();
+    this.effects.zones.length = 0;
+    this.time = 0; this.wave = 1; this.waveT = 0;
+    this.enemies.kills = 0;
+    this.trauma = 0;
+    this.skills.cancelChannels();
+    const P = this.player;
+    P.dead = false; P.hp = P.maxHp; P.pos.set(0, 0, 18); P.vel.set(0, 0, 0);
+    P.buffs.length = 0; P.superState = null; P.invuln = 1;
+    for (let i = 0; i < 6; i++) this.skills.fruitCds[i] = 0;
+    for (let i = 0; i < 5; i++) this.skills.swordCds[i] = 0;
+    this.ui.hideDeath(); this.ui.hideMenu();
+    document.getElementById('pause-modal').classList.add('hidden');
+    this.state = 'playing';
+    for (let i = 0; i < 4; i++) this.enemies.spawn('normal', this.world.randomEdgePoint(new THREE.Vector3()));
+    this.ui.announce('⚔️ WAVE 1 — FIGHT!', '#ffd94d');
+    this.ui.refreshBuffs();
+  }
+  pauseGame() {
+    if (this.state !== 'playing') return;
+    this.state = 'paused';
+    this.ui.showPause();
+  }
+  resumeGame() {
+    if (this.state !== 'paused') return;
+    this.state = 'playing';
+    document.getElementById('pause-modal').classList.add('hidden');
+  }
+  togglePause() {
+    if (this.state === 'playing') this.pauseGame();
+    else if (this.state === 'paused') this.resumeGame();
+  }
+  toMenu() {
+    this.state = 'menu';
+    this.recordBest();
+    this.skills.cancelChannels();
+    document.getElementById('pause-modal').classList.add('hidden');
+    this.ui.hideDeath(); this.ui.hideCharge(); this.ui.hideChannel();
+    this.ui.showMenu();
+  }
+  restartRun() { this.startRun(); }
+  updateBoss() {
+    let boss = null;
+    for (const e of this.enemies.list) {
+      if (!e.dead && e.tier === 'boss') { if (!boss || e.hp > boss.hp) boss = e; }
+    }
+    this.ui.updateBoss(boss);
+  }
+  autoResTick(rawDt) {
+    if (!this.settings.get('autoRes') || this.state !== 'playing') return;
+    this.autoResT += rawDt;
+    if (this.autoResT < 2.5) return;
+    this.autoResT = 0;
+    const fps = this.fpsEMA, cur = this.settings.get('resolutionScale');
+    if (fps < 48 && cur > 0.5) this.settings.set('resolutionScale', Math.round((cur - 0.1) * 20) / 20);
+    else if (fps > 58 && cur < 1.25) this.settings.set('resolutionScale', Math.round((cur + 0.05) * 20) / 20);
+  }
+
   shakeFrom(pos, power, maxDist = 40) {
     if (!this.settings.get('shakeEnabled') || power <= 0) return;
     const d = this.camera.position.distanceTo(pos);
@@ -154,18 +230,22 @@ export class Game {
       if (e.code === 'KeyQ') this.qHeld = true;
       if (e.code === 'KeyE') this.eHeld = true;
       if (e.repeat) return;
+      const modalIds = ['picker-modal', 'settings-modal', 'help-modal'];
+      const anyModal = modalIds.some(id => !document.getElementById(id).classList.contains('hidden'));
       if (e.code === 'Escape') {
-        for (const id of ['picker-modal', 'settings-modal', 'help-modal']) document.getElementById(id).classList.add('hidden');
+        if (anyModal) for (const id of modalIds) document.getElementById(id).classList.add('hidden');
+        else this.togglePause();
         return;
       }
-      const modalOpen = ['picker-modal', 'settings-modal', 'help-modal'].some(id => !document.getElementById(id).classList.contains('hidden'));
-      if (modalOpen) return; // ignore game keys while a modal is open
+      if (e.code === 'KeyM') { const m = this.audio.toggleMute(); this.ui.el.mute.textContent = m ? '🔇' : '🔊'; this.ui.refreshSettingsCtl(); return; }
+      if (e.code === 'KeyH') { this.ui.el.help.classList.toggle('hidden'); return; }
+      if (e.code === 'KeyP') { this.togglePause(); return; }
+      if (this.state === 'menu' && (e.code === 'Enter' || e.code === 'Space')) { this.startRun(); return; }
+      if (anyModal || this.state !== 'playing') return; // ignore game keys while modal open / not playing
       const FI = { KeyZ: 0, KeyX: 1, KeyC: 2, KeyV: 3, KeyB: 4, KeyF: 5 };
       const SI = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4 };
       if (e.code in FI) this.skills.castFruit(FI[e.code]);
       else if (e.code in SI) this.skills.castSword(SI[e.code]);
-      else if (e.code === 'KeyM') { const m = this.audio.toggleMute(); this.ui.el.mute.textContent = m ? '🔇' : '🔊'; this.ui.refreshSettingsCtl(); }
-      else if (e.code === 'KeyH') this.ui.el.help.classList.toggle('hidden');
     });
     window.addEventListener('keyup', (e) => {
       if (keyMap[e.code]) inp[keyMap[e.code]] = false;
@@ -234,14 +314,17 @@ export class Game {
       this.ui.setRedshift(k < 0.7 ? k : 1 - (k - 0.7) / 0.3 * 0.3);
       if (this.hitstopT <= 0) { this.timeScale = 1; this.ui.setRedshift(0); }
     }
-    const dt = rawDt * this.timeScale;
-    this.time += dt;
+    const playing = this.state === 'playing';
+    const dt = playing ? rawDt * this.timeScale : 0;
+    if (playing) this.time += dt;
+    else this.menuT += rawDt;
 
     // waves (30s cadence)
-    if (!this.player.dead) {
+    if (playing && !this.player.dead) {
       this.waveT += dt;
       if (this.waveT >= 30) {
         this.waveT = 0; this.wave++;
+        this.recordBest();
         this.ui.announce('⚔️ WAVE ' + this.wave, '#ffd94d');
         this.audio.roar();
       }
@@ -251,41 +334,55 @@ export class Game {
     if (this.eHeld) this.camYaw -= rawDt * 1.8;
 
     // firing (hold)
-    if (this.input.firing) this.player.tryM1();
+    if (playing && this.input.firing) this.player.tryM1();
 
-    // simulate
-    this.scheduler.update(dt);
-    this.player.update(dt, this.input);
-    this.enemies.update(dt);
-    this.skills.update(dt);
-    this.effects.update(dt);
-    this.world.update(dt, this.time);
+    // simulate (frozen when paused / in menu)
+    if (playing) {
+      this.scheduler.update(dt);
+      this.player.update(dt, this.input);
+      this.enemies.update(dt);
+      this.skills.update(dt);
+      this.effects.update(dt);
+    }
+    this.world.update(playing ? dt : rawDt, playing ? this.time : this.menuT);
     this.updateAim();
-    this.updateShake(dt);
+    this.updateShake(playing ? dt : rawDt);
 
-    // camera: follow + POSITION-ONLY shake (rotation computed pre-shake, never shaken)
-    const P = this.player.pos;
-    const d = this.camDist, h = d * 0.82;
-    _bp.set(
-      P.x + Math.sin(this.camYaw) * d * 0.62,
-      h,
-      P.z + Math.cos(this.camYaw) * d * 0.62
-    );
-    _lt.set(
-      lerp(P.x, this.aimPoint.x, 0.14),
-      1.6,
-      lerp(P.z, this.aimPoint.z, 0.14)
-    );
-    this.camera.position.lerp(_bp, 1 - Math.pow(0.0001, rawDt));
-    this.camera.lookAt(_lt);                    // rotation set from UNSHAKEN position
-    this.camera.position.add(this.shakeOffset); // positional displacement only
-    this.camera.updateMatrixWorld();
+    if (this.state === 'menu') {
+      // slow cinematic orbit behind the main menu
+      this.camYaw += rawDt * 0.12;
+      _bp.set(Math.sin(this.camYaw) * 46, 27, Math.cos(this.camYaw) * 46);
+      this.camera.position.lerp(_bp, 1 - Math.pow(0.01, rawDt));
+      this.camera.lookAt(0, 2, 0);
+      this.camera.updateMatrixWorld();
+    } else {
+      // camera: follow + POSITION-ONLY shake (rotation computed pre-shake, never shaken)
+      const P = this.player.pos;
+      const d = this.camDist, h = d * 0.82;
+      _bp.set(
+        P.x + Math.sin(this.camYaw) * d * 0.62,
+        h,
+        P.z + Math.cos(this.camYaw) * d * 0.62
+      );
+      _lt.set(
+        lerp(P.x, this.aimPoint.x, 0.14),
+        1.6,
+        lerp(P.z, this.aimPoint.z, 0.14)
+      );
+      this.camera.position.lerp(_bp, 1 - Math.pow(0.0001, rawDt));
+      this.camera.lookAt(_lt);                    // rotation set from UNSHAKEN position
+      this.camera.position.add(this.shakeOffset); // positional displacement only
+      this.camera.updateMatrixWorld();
+    }
 
     // ui
-    this.ui.updateSkillRows();
-    this.ui.updateHUD();
-    this.ui.updateDmg(rawDt);
-    this.ui.pulseLowHp(this.player.dead ? 0 : this.player.hp / this.player.maxHp);
+    if (this.state !== 'menu') {
+      this.ui.updateSkillRows();
+      this.ui.updateHUD();
+      this.ui.updateDmg(rawDt);
+      this.ui.pulseLowHp(this.player.dead ? 0 : this.player.hp / this.player.maxHp);
+      if (playing) { this.updateBoss(); this.autoResTick(rawDt); }
+    }
 
     this.renderer.render(this.scene, this.camera);
   }

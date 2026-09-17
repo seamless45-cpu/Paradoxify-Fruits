@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   damageNumbers: true,
   screenFlash: true,
   fpsCounter: false,
+  autoRes: false,
   mute: false,
   volume: 0.55,
 };

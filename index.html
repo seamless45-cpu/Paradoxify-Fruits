@@ -30,6 +30,31 @@
   </div>
 </div>
 
+<!-- MAIN MENU -->
+<div id="menu" class="hidden">
+  <div class="menu-inner">
+    <img src="1789648036939.jpg" alt="Paradoxify Fruits" class="menu-art">
+    <div class="menu-title">PARADOXIFY <span>FRUITS</span></div>
+    <div class="menu-sub">3D ARENA • ENDLESS WAVES</div>
+    <div id="menu-best" class="menu-best"></div>
+    <button id="btn-play" class="wide-btn primary big">▶ &nbsp;PLAY</button>
+    <button id="btn-menu-settings" class="wide-btn">⚙️ GRAPHICS SETTINGS</button>
+    <div class="menu-hint">WASD move • Mouse aim • LMB attack • Z–F fruit • 1–5 sword<br>Bottom slots swap fruit &amp; sword anytime • P pause • H help</div>
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div id="pause-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><span>⏸️ PAUSED</span></div>
+    <div id="pause-stats" class="pause-stats"></div>
+    <button id="btn-resume" class="wide-btn primary">RESUME (P)</button>
+    <button id="btn-pause-settings" class="wide-btn">⚙️ SETTINGS</button>
+    <button id="btn-restart" class="wide-btn">🔄 RESTART RUN</button>
+    <button id="btn-quit-menu" class="wide-btn danger">QUIT TO MENU</button>
+  </div>
+</div>
+
 <!-- 3D CANVAS -->
 <canvas id="game-canvas"></canvas>
 
@@ -53,6 +78,7 @@
   <div id="hud-topcenter">
     <div id="wave-banner">WAVE 1</div>
     <div id="stat-row"><span id="stat-kills">⚔ 0</span><span id="stat-enemies">👾 0</span><span id="stat-time">⏱ 0:00</span></div>
+    <div id="boss-bar" class="hidden"><div id="boss-name">👑 BOSS</div><div id="boss-track"><div id="boss-fill"></div></div></div>
   </div>
   <div id="hud-topright">
     <div id="fps-counter" class="hidden">60 FPS</div>
