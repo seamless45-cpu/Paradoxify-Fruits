@@ -51,6 +51,9 @@ Left stick to move (auto-aim), ⚔️ button for M1 (hold to repeat), **USE** bu
   seconds remaining; `USE` buttons on touch, `Z X C V B F` badges on PC.
 - **Fruit and sword are SEPARATED** — two square horizontal inventory slots at the bottom with an
   equip/unequip picker; either slot can be empty.
+- **Cinematic visuals** — ACES tone mapping, UnrealBloom post-processing, nebula sky with a
+  ringed planet + shooting stars, glowing arena inlays and crystals, light beams on spawn
+  portals, elite/boss emissive pulse, fruit-colored glowing eyes.
 - **7 enemy kinds + real camera** — Grunts, Runners, Brutes, Spitters, Bombers, Wraiths and
   Splitters across normal/elite/boss tiers, camera-relative movement, dodge roll with i-frames,
   FOV kick, combo system, spawn portals, minimap and wave horns.

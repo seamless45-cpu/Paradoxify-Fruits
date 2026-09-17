@@ -498,6 +498,10 @@ export class Enemy {
     if (this.flashT > 0) this.bodyMat.emissive.setHex(0xaaaaaa);
     else if (this.freezeT > 0) this.bodyMat.emissive.setHex(0x2266aa);
     else if (this.burnT > 0) this.bodyMat.emissive.setHex(0x661100);
+    else if (this.tier !== 'normal') {
+      const p = 0.3 + 0.28 * Math.sin(this.game.time * 5 + this.ph);
+      this.bodyMat.emissive.setHex(this.tier === 'boss' ? 0xff2e4d : 0xffaa22).multiplyScalar(p);
+    }
     else this.bodyMat.emissive.setHex(0x000000);
     // hp bar
     const f = clamp(this.hp / this.maxHp, 0, 1);
@@ -626,6 +630,7 @@ export class EnemyManager {
       // spawn portal telegraph, enemy arrives shortly after
       this.pending.push({ t: 0.7, tier, kind, pos: pos.clone() });
       this.game.effects.ring(pos, { color: 0xb45cff, maxR: 3.5, dur: 0.7 });
+      this.game.effects.beam(pos, { color: 0xb45cff, radius: 1.1, dur: 0.7 });
       this.game.effects.burst(pos.clone().setY(1), { count: 8, color: 0xb45cff, speed: 5, up: 8, life: 0.6, size: 2, gravity: -4 });
       return null;
     }

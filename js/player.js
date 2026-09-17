@@ -56,6 +56,7 @@ export class Player {
     this.head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), skin);
     this.head.position.y = 2.2;
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111122 });
+    this.eyeMat = eyeMat;
     const eL = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.02), eyeMat);
     eL.position.set(-0.13, 2.22, 0.29); const eR = eL.clone(); eR.position.x = 0.13;
     // arms (pivot groups at shoulder)
@@ -107,6 +108,7 @@ export class Player {
     this.auraMat.color.setHex(fc);
     this.light.color.setHex(fc);
     this.aura.visible = !!f;
+    this.eyeMat.color.setHex(f ? f.color : 0x111122);
     this.swordMesh.visible = !!s;
     const hasGun = !!this.gun();
     this.gunMesh.visible = hasGun;

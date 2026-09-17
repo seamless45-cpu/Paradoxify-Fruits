@@ -276,9 +276,13 @@ export class UI {
     slider('Debris limit', 'Max flying debris chunks.', 'debrisLimit', 0, 520, 10, v => v.toFixed(0));
     select('Lightning detail', 'Bolt segment density.', 'boltDetail', [[0, 'Low (12 seg)'], [1, 'High (26 seg)']]);
     toggle('Glow sprites', 'Additive impact halos.', 'glowSprites');
+    toggle('Bloom (postFX)', 'Cinematic neon glow. Silently skipped if unavailable.', 'bloom');
+    slider('Bloom strength', 'Glow intensity.', 'bloomStrength', 0, 1.6, 0.05, v => v.toFixed(2));
+    slider('Exposure', 'Overall brightness (ACES tone mapping).', 'exposure', 0.5, 1.6, 0.05, v => v.toFixed(2));
     slider('Enemy cap', 'Max simultaneous enemies.', 'enemyCap', 20, 100, 5, v => v.toFixed(0));
     sec('CAMERA SHAKE (POSITION ONLY — NO ROTATION)');
     slider('Field of view', 'Camera FOV. Kicks wider on dashes & blasts.', 'fov', 40, 75, 1, v => v.toFixed(0) + '°');
+    slider('Camera pitch', 'Low = cinematic, high = tactical.', 'camPitch', 25, 60, 1, v => v.toFixed(0) + '°');
     toggle('Camera shake', 'Master switch for all shake.', 'shakeEnabled');
     slider('Shake intensity', 'Multiplier on displacement.', 'shakeIntensity', 0, 2, 0.05, v => v.toFixed(2) + '×');
     sec('DISPLAY & AUDIO');

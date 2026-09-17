@@ -29,7 +29,8 @@ export class Game {
     this.sustain = { mag: 0, t: 0, dur: 1 };
     this.shakeOffset = new THREE.Vector3();
     this.camYaw = 0;
-    this.camDist = 30;
+    this.camDist = 26;
+    this.camPitch = 38 * Math.PI / 180;
     this.aimPoint = new THREE.Vector3(0, 0, 10);
     this.mouseNDC = new THREE.Vector2(0, 0);
     this.hasMouse = false;
@@ -41,6 +42,10 @@ export class Game {
     this.combo = { n: 0, t: 0 };
     this.baseFov = this.settings.get('fov');
     this.fovKick = 0;
+    this.followVel = new THREE.Vector3();
+    this._lastP = new THREE.Vector3(0, 0, 18);
+    this.smoothLook = new THREE.Vector3(0, 1.6, 18);
+    this.composer = null; this.bloomPass = null;
   }
 
   async init(onProgress) {
@@ -49,10 +54,14 @@ export class Game {
     const canvas = document.getElementById('game-canvas');
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.settings.get('antialias'), powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = this.settings.get('exposure');
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1500);
+    this.camera.position.set(0, 25, 43); // no spawn-snap: start on the menu orbit
+    this.camera.lookAt(0, 2, 0);
     this.applySize();
 
     await step(25, 'building arena…');
@@ -90,15 +99,41 @@ export class Game {
 
     await step(92, 'opening portals…');
     this.ui.showMenu();
+    await step(96, 'charging bloom…');
+    await this.initComposer();
     await step(100, 'ready!');
   }
 
   // ================= SETTINGS =================
+  async initComposer() {
+    // Bloom post-processing (dynamic import: import-map in browser, graceful skip in node)
+    try {
+      const C = await import('three/addons/postprocessing/EffectComposer.js');
+      const RP = await import('three/addons/postprocessing/RenderPass.js');
+      const UB = await import('three/addons/postprocessing/UnrealBloomPass.js');
+      const OP = await import('three/addons/postprocessing/OutputPass.js');
+      this.composer = new C.EffectComposer(this.renderer);
+      this.composer.addPass(new RP.RenderPass(this.scene, this.camera));
+      this.bloomPass = new UB.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), this.settings.get('bloomStrength'), 0.55, 0.55);
+      this.composer.addPass(this.bloomPass);
+      this.composer.addPass(new OP.OutputPass());
+      try {
+        if (this.renderer.capabilities.isWebGL2) {
+          this.composer.renderTarget1.samples = 4;
+          this.composer.renderTarget2.samples = 4;
+        }
+      } catch (e) {}
+      const pr = Math.min(window.devicePixelRatio || 1, this.settings.get('maxPixelRatio')) * this.settings.get('resolutionScale');
+      this.composer.setPixelRatio(pr);
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    } catch (e) { this.composer = null; this.bloomPass = null; }
+  }
   applySize() {
     const s = this.settings;
     const pr = Math.min(window.devicePixelRatio || 1, s.get('maxPixelRatio')) * s.get('resolutionScale');
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    if (this.composer) { this.composer.setPixelRatio(pr); this.composer.setSize(window.innerWidth, window.innerHeight); }
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
   }
@@ -107,6 +142,9 @@ export class Game {
     if (k === '*' || k === 'shadows' || k === 'shadowSize' || k === 'fogDensity') this.world.applySettings();
     if (k === 'boltDetail') this.effects.rebuildBoltVariants();
     if (k === '*' || k === 'fov') this.baseFov = this.settings.get('fov');
+    if (k === '*' || k === 'camPitch') this.camPitch = this.settings.get('camPitch') * Math.PI / 180;
+    if (k === '*' || k === 'bloomStrength') { if (this.bloomPass) this.bloomPass.strength = this.settings.get('bloomStrength'); }
+    if (k === '*' || k === 'exposure') this.renderer.toneMappingExposure = this.settings.get('exposure');
     if (k === '*' || k === 'fpsCounter') this.ui.el.fps.classList.toggle('hidden', !this.settings.get('fpsCounter'));
     if (k === '*' || k === 'volume' || k === 'mute') this.audio.applyVolume();
     if (!this.settings.get('shakeEnabled')) { this.trauma = 0; }
@@ -288,7 +326,7 @@ export class Game {
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', (e) => {
-      this.camDist = clamp(this.camDist + Math.sign(e.deltaY) * 2.5, 16, 52);
+      this.camDist = clamp(this.camDist + Math.sign(e.deltaY) * 2.5, 14, 46);
     }, { passive: true });
     window.addEventListener('resize', () => this.applySize());
   }
@@ -373,27 +411,34 @@ export class Game {
     if (this.state === 'menu') {
       // slow cinematic orbit behind the main menu
       this.camYaw += rawDt * 0.12;
-      _bp.set(Math.sin(this.camYaw) * 46, 27, Math.cos(this.camYaw) * 46);
+      _bp.set(Math.sin(this.camYaw) * 43, 25, Math.cos(this.camYaw) * 43);
       this.camera.position.lerp(_bp, 1 - Math.pow(0.01, rawDt));
       this.camera.lookAt(0, 2, 0);
       if (Math.abs(this.camera.fov - this.baseFov) > 0.05) { this.camera.fov = this.baseFov; this.camera.updateProjectionMatrix(); }
       this.camera.updateMatrixWorld();
     } else {
-      // camera: follow + POSITION-ONLY shake (rotation computed pre-shake, never shaken)
+      // --- third-person follow camera (rotation NEVER shaken; shake is positional only) ---
       const P = this.player.pos;
-      const d = this.camDist, h = d * 0.82;
-      _bp.set(
-        P.x + Math.sin(this.camYaw) * d * 0.62,
-        h,
-        P.z + Math.cos(this.camYaw) * d * 0.62
-      );
+      // smoothed player velocity for look-ahead
+      _vel.set(P.x - this._lastP.x, 0, P.z - this._lastP.z).multiplyScalar(1 / Math.max(1e-4, rawDt));
+      if (_vel.lengthSq() > 900) _vel.setLength(30);
+      this._lastP.copy(P);
+      this.followVel.lerp(_vel, 1 - Math.pow(0.001, rawDt));
+      // dynamic distance: breathes with shake trauma
+      const dEff = this.camDist * (1 + this.trauma * 0.1);
+      const back = Math.cos(this.camPitch) * dEff, h = Math.sin(this.camPitch) * dEff;
+      const sy = Math.sin(this.camYaw), cy = Math.cos(this.camYaw);
+      // shoulder offset (screen-right), applied to both eye and target
+      const shX = cy * 1.3, shZ = -sy * 1.3;
+      _bp.set(P.x + sy * back + shX, h, P.z + cy * back + shZ);
       _lt.set(
-        lerp(P.x, this.aimPoint.x, 0.14),
+        lerp(P.x, this.aimPoint.x, 0.16) + this.followVel.x * 0.22 + shX,
         1.6,
-        lerp(P.z, this.aimPoint.z, 0.14)
+        lerp(P.z, this.aimPoint.z, 0.16) + this.followVel.z * 0.22 + shZ
       );
+      this.smoothLook.lerp(_lt, 1 - Math.pow(1e-6, rawDt));
       this.camera.position.lerp(_bp, 1 - Math.pow(0.0001, rawDt));
-      this.camera.lookAt(_lt);                    // rotation set from UNSHAKEN position
+      this.camera.lookAt(this.smoothLook);        // rotation set from UNSHAKEN position
       this.camera.position.add(this.shakeOffset); // positional displacement only
       const wantFov = this.baseFov + this.fovKick;
       if (Math.abs(this.camera.fov - wantFov) > 0.05) { this.camera.fov = wantFov; this.camera.updateProjectionMatrix(); }
@@ -409,8 +454,9 @@ export class Game {
       if (playing) { this.updateBoss(); this.autoResTick(rawDt); this.ui.updateCombo(this.combo.n, this.combo.t / 3.5); }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer && this.settings.get('bloom')) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 }
 const _ray = new THREE.Raycaster();
-const _bp = new THREE.Vector3(), _lt = new THREE.Vector3(), _aim = new THREE.Vector3();
+const _bp = new THREE.Vector3(), _lt = new THREE.Vector3(), _aim = new THREE.Vector3(), _vel = new THREE.Vector3();

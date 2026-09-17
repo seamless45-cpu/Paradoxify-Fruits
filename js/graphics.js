@@ -1,9 +1,9 @@
 // ---------- Advanced graphics settings ----------
 export const PRESETS = {
-  Low:    { resolutionScale: 0.7, shadows: false, shadowSize: 1024, particleDensity: 0.35, debrisLimit: 80,  boltDetail: 0, glowSprites: false, maxPixelRatio: 1,   fogDensity: 0.006, enemyCap: 40 },
-  Medium: { resolutionScale: 1.0, shadows: true,  shadowSize: 1024, particleDensity: 0.7,  debrisLimit: 200, boltDetail: 0, glowSprites: true,  maxPixelRatio: 1.5, fogDensity: 0.0045, enemyCap: 55 },
-  High:   { resolutionScale: 1.0, shadows: true,  shadowSize: 2048, particleDensity: 1.0,  debrisLimit: 320, boltDetail: 1, glowSprites: true,  maxPixelRatio: 2,   fogDensity: 0.0038, enemyCap: 70 },
-  Ultra:  { resolutionScale: 1.25, shadows: true, shadowSize: 4096, particleDensity: 1.8,  debrisLimit: 520, boltDetail: 1, glowSprites: true,  maxPixelRatio: 2,   fogDensity: 0.0032, enemyCap: 85 },
+  Low:    { resolutionScale: 0.7, shadows: false, shadowSize: 1024, particleDensity: 0.35, debrisLimit: 80,  boltDetail: 0, glowSprites: false, maxPixelRatio: 1,   fogDensity: 0.006, enemyCap: 40, bloom: false },
+  Medium: { resolutionScale: 1.0, shadows: true,  shadowSize: 1024, particleDensity: 0.7,  debrisLimit: 200, boltDetail: 0, glowSprites: true,  maxPixelRatio: 1.5, fogDensity: 0.0045, enemyCap: 55, bloom: false },
+  High:   { resolutionScale: 1.0, shadows: true,  shadowSize: 2048, particleDensity: 1.0,  debrisLimit: 320, boltDetail: 1, glowSprites: true,  maxPixelRatio: 2,   fogDensity: 0.0038, enemyCap: 70, bloom: true },
+  Ultra:  { resolutionScale: 1.25, shadows: true, shadowSize: 4096, particleDensity: 1.8,  debrisLimit: 520, boltDetail: 1, glowSprites: true,  maxPixelRatio: 2,   fogDensity: 0.0032, enemyCap: 85, bloom: true },
 };
 
 export const DEFAULT_SETTINGS = {
@@ -27,6 +27,10 @@ export const DEFAULT_SETTINGS = {
   autoRes: false,
   fov: 55,
   minimap: true,
+  bloom: true,
+  bloomStrength: 0.9,
+  exposure: 1.1,
+  camPitch: 38,
   mute: false,
   volume: 0.55,
 };
